@@ -22,7 +22,7 @@ st.markdown("""
 <style>
     /* Styling elements */
     [data-testid="stAppViewContainer"] {
-        background-image: linear-gradient(rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.88)), url("https://cards.scryfall.io/art_crop/front/2/5/2520ab23-a068-4462-b261-2754409b4108.jpg?1783906622");
+        background-image: linear-gradient(rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.88)), url("https://cards.scryfall.io/art_crop/front/9/4/94f7a441-bf2d-46fb-a7b6-9bd6137f86d9.jpg?1783943673");
         background-size: cover;
         background-position: center;
         background-attachment: fixed;
