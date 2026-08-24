@@ -21,6 +21,12 @@ st.set_page_config(
 st.markdown("""
 <style>
     /* Styling elements */
+    [data-testid="stAppViewContainer"] {
+        background-image: linear-gradient(rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.88)), url("https://cards.scryfall.io/art_crop/front/2/5/2520ab23-a068-4462-b261-2754409b4108.jpg?1783906622");
+        background-size: cover;
+        background-position: center;
+        background-attachment: fixed;
+    }
     .main-title {
         font-family: 'Outfit', 'Inter', sans-serif;
         font-size: 3rem;
