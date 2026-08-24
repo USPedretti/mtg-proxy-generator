@@ -210,10 +210,7 @@ def generate_pdf(card_images):
         
         c.drawImage(img_reader, x, y, width=card_width, height=card_height)
         
-        # Draw cutting outline helper border
-        c.setStrokeColorRGB(0.8, 0.8, 0.8)
-        c.setLineWidth(0.5)
-        c.rect(x, y, card_width, card_height)
+
         
         if page_idx == 8 and idx < len(card_images) - 1:
             c.showPage()
