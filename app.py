@@ -177,7 +177,7 @@ def fetch_card_image(name, set_code=None):
     except Exception:
         return None
 
-def generate_pdf(card_images):
+def generate_pdf(card_images, draw_borders=False):
     """
     Generates a printable A4 PDF from list of PIL Image items.
     Layout: 3x3 grid (9 cards per page), centered.
@@ -210,7 +210,11 @@ def generate_pdf(card_images):
         
         c.drawImage(img_reader, x, y, width=card_width, height=card_height)
         
-
+        if draw_borders:
+            # Draw cutting outline helper border
+            c.setStrokeColorRGB(0.8, 0.8, 0.8)
+            c.setLineWidth(0.5)
+            c.rect(x, y, card_width, card_height)
         
         if page_idx == 8 and idx < len(card_images) - 1:
             c.showPage()
@@ -248,6 +252,7 @@ with left_col:
         placeholder="Cole suas cartas..."
     )
     
+    draw_borders = st.checkbox("Desenhar linhas finas de corte (ajuda a recortar)", value=False)
     generate_btn = st.button("Gerar PDF de Proxies")
 
 with right_col:
@@ -303,7 +308,7 @@ with right_col:
                     with st.spinner("Gerando PDF..."):
                         # Extract the raw PIL Images from list of dicts
                         images_only = [item['image'] for item in fetched_images]
-                        pdf_data = generate_pdf(images_only)
+                        pdf_data = generate_pdf(images_only, draw_borders=draw_borders)
                     
                     # Download button
                     st.download_button(
