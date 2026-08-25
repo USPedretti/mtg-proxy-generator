@@ -181,6 +181,11 @@ def fetch_card_image(name, set_code=None, collector_number=None):
         "Accept": "application/json"
     }
     
+    # Check if this is a basic land and no set is specified, default to old frame (LEB)
+    BASIC_LANDS = {"plains", "island", "swamp", "mountain", "forest"}
+    if name.lower() in BASIC_LANDS and not set_code:
+        set_code = "LEB"
+    
     # 1. Try Set + Collector Number endpoint if available (crucial for basic lands)
     if set_code and collector_number:
         url = f"https://api.scryfall.com/cards/{requests.utils.quote(set_code.lower())}/{requests.utils.quote(collector_number)}"
@@ -188,15 +193,21 @@ def fetch_card_image(name, set_code=None, collector_number=None):
             response = requests.get(url, headers=headers, timeout=10)
             if response.status_code == 200:
                 data = response.json()
-                image_uris = data.get('image_uris')
-                if not image_uris and 'card_faces' in data:
-                    image_uris = data['card_faces'][0].get('image_uris')
-                if image_uris:
-                    image_url = image_uris.get('large') or image_uris.get('normal')
-                    if image_url:
-                        img_response = requests.get(image_url, headers=headers, timeout=10)
-                        if img_response.status_code == 200:
-                            return Image.open(io.BytesIO(img_response.content))
+                
+                # Check if card name matches the requested name (substring check to avoid mismatches)
+                fetched_name = data.get('name', '').lower()
+                requested_name = name.lower()
+                
+                if requested_name in fetched_name or fetched_name in requested_name:
+                    image_uris = data.get('image_uris')
+                    if not image_uris and 'card_faces' in data:
+                        image_uris = data['card_faces'][0].get('image_uris')
+                    if image_uris:
+                        image_url = image_uris.get('large') or image_uris.get('normal')
+                        if image_url:
+                            img_response = requests.get(image_url, headers=headers, timeout=10)
+                            if img_response.status_code == 200:
+                                return Image.open(io.BytesIO(img_response.content))
         except Exception:
             pass # Fall back to name match
             
