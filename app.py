@@ -101,15 +101,28 @@ def parse_decklist(texto):
     Supported formats:
     4 Lightning Bolt (LEA)
     1 Black Lotus (LEB) 23
-    4x Brainstorm (CNS)
-    1 Sol Ring
+    1 mountain 263 (ELD)
+    2x Sol Ring
     
-    Returns a list of dicts: [{'quantity': int, 'name': str, 'set_code': str or None}]
+    Returns a list of dicts: [{'quantity': int, 'name': str, 'set_code': str or None, 'collector_number': str or None}]
     """
     cards = []
-    # Match quantity, name, optional set code, and optional collector number
-    pattern = re.compile(
-        r'^\s*(?P<quantity>\d+)\s*x?\s+(?P<name>[^(]+?)(?:\s*\((?P<set>[^)]+)\))?(?:\s+\d+)?\s*$',
+    
+    # Pattern B (number before set code): e.g. "1 mountain 263 (ELD)"
+    pattern_b = re.compile(
+        r'^\s*(?P<quantity>\d+)\s*x?\s+(?P<name>.+?)\s+(?P<number>\d+)\s*\((?P<set>[^)]+)\)\s*$',
+        re.IGNORECASE
+    )
+    
+    # Pattern A (set code in parens, optional number after): e.g. "1 Mountain (ELD) 263" or "4 Lightning Bolt (LEA)"
+    pattern_a = re.compile(
+        r'^\s*(?P<quantity>\d+)\s*x?\s+(?P<name>[^(]+?)\s*\((?P<set>[^)]+)\)(?:\s+(?P<number>\d+))?\s*$',
+        re.IGNORECASE
+    )
+    
+    # Pattern C (fallback, no set code): e.g. "2x Sol Ring"
+    pattern_c = re.compile(
+        r'^\s*(?P<quantity>\d+)\s*x?\s+(?P<name>.+?)\s*$',
         re.IGNORECASE
     )
     
@@ -118,30 +131,47 @@ def parse_decklist(texto):
         if not line or line.startswith('//') or line.startswith('#'):
             continue
             
-        match = pattern.match(line)
-        if match:
-            gd = match.groupdict()
+        # Try Pattern B first (to prevent eager name matching on numbers before set code)
+        match_b = pattern_b.match(line)
+        if match_b:
+            gd = match_b.groupdict()
             cards.append({
                 'quantity': int(gd['quantity']),
                 'name': gd['name'].strip(),
-                'set_code': gd['set'].strip().upper() if gd['set'] else None
+                'set_code': gd['set'].strip().upper(),
+                'collector_number': gd['number'].strip()
             })
-        else:
-            # Fallback to simple quantity and name extract
-            fallback_pattern = re.compile(r'^\s*(?P<quantity>\d+)\s*x?\s+(?P<name>.+)$', re.IGNORECASE)
-            fallback_match = fallback_pattern.match(line)
-            if fallback_match:
-                gd = fallback_match.groupdict()
-                cards.append({
-                    'quantity': int(gd['quantity']),
-                    'name': gd['name'].strip(),
-                    'set_code': None
-                })
+            continue
+            
+        # Try Pattern A
+        match_a = pattern_a.match(line)
+        if match_a:
+            gd = match_a.groupdict()
+            cards.append({
+                'quantity': int(gd['quantity']),
+                'name': gd['name'].strip(),
+                'set_code': gd['set'].strip().upper(),
+                'collector_number': gd['number'].strip() if gd['number'] else None
+            })
+            continue
+            
+        # Try Pattern C
+        match_c = pattern_c.match(line)
+        if match_c:
+            gd = match_c.groupdict()
+            cards.append({
+                'quantity': int(gd['quantity']),
+                'name': gd['name'].strip(),
+                'set_code': None,
+                'collector_number': None
+            })
+            
     return cards
 
-def fetch_card_image(name, set_code=None):
+def fetch_card_image(name, set_code=None, collector_number=None):
     """
     Queries the Scryfall API to retrieve the card image in normal or large size.
+    Uses specific /cards/{set}/{number} endpoint if collector_number is provided.
     Returns: A PIL Image object if successful, else None.
     """
     time.sleep(0.1)  # Respect Scryfall Rate Limit (50-100ms)
@@ -151,7 +181,26 @@ def fetch_card_image(name, set_code=None):
         "Accept": "application/json"
     }
     
-    # 1. Try Exact match endpoint
+    # 1. Try Set + Collector Number endpoint if available (crucial for basic lands)
+    if set_code and collector_number:
+        url = f"https://api.scryfall.com/cards/{requests.utils.quote(set_code.lower())}/{requests.utils.quote(collector_number)}"
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                image_uris = data.get('image_uris')
+                if not image_uris and 'card_faces' in data:
+                    image_uris = data['card_faces'][0].get('image_uris')
+                if image_uris:
+                    image_url = image_uris.get('large') or image_uris.get('normal')
+                    if image_url:
+                        img_response = requests.get(image_url, headers=headers, timeout=10)
+                        if img_response.status_code == 200:
+                            return Image.open(io.BytesIO(img_response.content))
+        except Exception:
+            pass # Fall back to name match
+            
+    # 2. Try Exact match endpoint
     url = f"https://api.scryfall.com/cards/named?exact={requests.utils.quote(name)}"
     if set_code:
         url += f"&set={requests.utils.quote(set_code)}"
@@ -159,7 +208,7 @@ def fetch_card_image(name, set_code=None):
     try:
         response = requests.get(url, headers=headers, timeout=10)
         
-        # 2. Try Fuzzy match endpoint if exact fails
+        # 3. Try Fuzzy match endpoint if exact fails
         if response.status_code != 200:
             fuzzy_url = f"https://api.scryfall.com/cards/named?fuzzy={requests.utils.quote(name)}"
             if set_code:
@@ -282,20 +331,22 @@ with right_col:
                 total_to_fetch = len(parsed_cards)
                 
                 for i, card in enumerate(parsed_cards):
-                    progress_text.text(f"Buscando '{card['name']}' no Scryfall...")
+                    display_num = f" #{card['collector_number']}" if card.get('collector_number') else ""
+                    progress_text.text(f"Buscando '{card['name']}'{display_num} no Scryfall...")
                     progress_bar.progress((i + 1) / total_to_fetch)
                     
-                    img = fetch_card_image(card['name'], card['set_code'])
+                    img = fetch_card_image(card['name'], card['set_code'], card.get('collector_number'))
                     if img:
                         # Append the image multiplied by its quantity
                         for _ in range(card['quantity']):
                             fetched_images.append({
                                 'image': img,
                                 'name': card['name'],
-                                'set_code': card['set_code']
+                                'set_code': card['set_code'],
+                                'collector_number': card.get('collector_number')
                             })
                     else:
-                        failed_cards.append(f"{card['quantity']}x {card['name']}" + (f" ({card['set_code']})" if card['set_code'] else ""))
+                        failed_cards.append(f"{card['quantity']}x {card['name']}" + (f" ({card['set_code']})" if card['set_code'] else "") + display_num)
                 
                 progress_bar.empty()
                 progress_text.empty()
@@ -333,17 +384,21 @@ with right_col:
                     unique_img_idx = 0
                     
                     for card in fetched_images:
-                        unique_key = f"{card['name']}_{card['set_code']}"
+                        unique_key = f"{card['name']}_{card['set_code']}_{card.get('collector_number')}"
                         if unique_key not in displayed_uniques:
                             displayed_uniques.add(unique_key)
                             col_to_use = grid_cols[unique_img_idx % 4]
                             
                             with col_to_use:
+                                edition_display = card['set_code'] if card['set_code'] else 'Padrão'
+                                if card.get('collector_number'):
+                                    edition_display += f" #{card['collector_number']}"
+                                    
                                 st.markdown(f"""
                                 <div class="card-preview-container">
                                     <div class="card-qty">Quantidade: {card['image'] and fetched_images.count(card)}x</div>
                                     <div class="card-title" title="{card['name']}">{card['name']}</div>
-                                    <div class="card-edition">{card['set_code'] if card['set_code'] else 'Padrão'}</div>
+                                    <div class="card-edition">{edition_display}</div>
                                 </div>
                                 """, unsafe_allow_html=True)
                                 col_to_use.image(card['image'], use_container_width=True)
